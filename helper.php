@@ -137,7 +137,6 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
 
     public function getMethods()
     {
-        $result = [];
         $result[] = [
             'name' => 'addColumn',
             'desc' => '(optional) adds an extra column for plugin data',
@@ -166,21 +165,34 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
             'name' => 'setFlags',
             'desc' => '(optional) overrides default flags, or en/disable existing columns',
             'params' => ['flags' => 'array'],
-            'return' => ['success' => 'boolean'],
+            'return' => ['success' => 'boolean']
         ];
         $result[] = [
             'name' => 'startList',
             'desc' => '(required) prepares the table header for the page list',
+            'params' => [
+                'format' => 'string',
+                'renderer' => 'Doku_Renderer',
+                'caller' => 'string'
+            ]
         ];
         $result[] = [
             'name' => 'addPage',
             'desc' => '(required) adds a page to the list',
-            'params' => ["page attributes, 'id' required, others optional" => 'array'],
+            'params' => [
+                "page attributes, 'id' required, others optional" => 'array',
+                'format' => 'string',
+                'renderer' => 'Doku_Renderer'
+            ]
         ];
         $result[] = [
             'name' => 'finishList',
             'desc' => '(required) returns the XHTML output',
-            'return' => ['xhtml' => 'string'],
+            'params' => [
+                'format' => 'string',
+                'renderer' => 'Doku_Renderer'
+            ],
+            'return' => ['xhtml' => 'string']
         ];
         return $result;
     }
@@ -331,9 +343,11 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
      * @param null|string $callerClass
      * @return bool
      */
-    public function startList($callerClass = null)
-    {
+    public function startList($callerClass = null,$format="xhtml") {
+		$renderer = p_get_renderer($format);
 
+        $targetIsODT = strtoupper($format) == "ODT" && $renderer != NULL;
+        
         // table style
         switch ($this->style) {
             case 'table':
@@ -354,13 +368,30 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
             if ($callerClass) {
                 $class .= ' ' . $callerClass;
             }
-            $this->doc = '<div class="table"><table class="' . $class . '">';
+            if ($targetIsODT) {
+                if ($this->style == "table") {
+                    $renderer->p_close(); //according to odt plugin documentation, this line is important! (see https://www.dokuwiki.org/plugin:odt:implementodtsupport)
+                    $renderer->table_open(1,1);
+                } else {
+                    $renderer->listu_open();
+                }
+            } else {
+                $this->doc = '<div class="table"><table class="' . $class . '">';
+            }
         } else {
             // Simplelist is enabled; Skip header and firsthl
             $this->showheader = false;
             $this->showfirsthl = false;
-
-            $this->doc = '<ul>';
+            if ($targetIsODT) {
+                if ($this->style == "table") {
+                    $renderer->p_close(); //according to odt plugin documentation, this line is important! (see https://www.dokuwiki.org/plugin:odt:implementodtsupport)
+                    $renderer->table_open(1,1);
+                } else {
+                    $renderer->listu_open();
+                }
+            } else {
+                $this->doc = '<ul>';
+            }
         }
 
         $this->page = null;
@@ -379,7 +410,15 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
 
         // header row
         if ($this->showheader) {
-            $this->doc .= '<tr>';
+            if ($targetIsODT) {
+                if ($this->style == "table") {
+                    $renderer->tableheader_open();
+                } else {
+                    $renderer->listitem_open(0);
+                }
+            } else {
+                $this->doc .= '<tr>';
+            }
             $columns = ['page', 'date', 'user', 'desc', 'diff', 'summary'];
             //image column first
             if ($this->column['image']) {
@@ -394,7 +433,11 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
                     if (empty($this->header[$col])) {
                         $this->header[$col] = hsc($this->getLang($col));
                     }
-                    $this->doc .= '<th class="' . $col . '">' . $this->header[$col] . '</th>';
+                    if ($targetIsODT) {
+                        $renderer->cdata($this->header[$col]);
+                    } else {
+                        $this->doc .= '<th class="' . $col . '">' . $this->header[$col] . '</th>';
+                    }
                 }
             }
             //plugin columns
@@ -404,11 +447,23 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
                         if (empty($this->header[$col])) {
                             $this->header[$col] = hsc($this->$plugin->th($col, $class));
                         }
-                        $this->doc .= '<th class="' . $col . '">' . $this->header[$col] . '</th>';
+                        if ($targetIsODT) {
+                            $renderer->cdata($this->header[$col]);
+                        } else {
+                            $this->doc .= '<th class="' . $col . '">' . $this->header[$col] . '</th>';
+                        }
                     }
                 }
             }
-            $this->doc .= '</tr>';
+            if ($targetIsODT) {
+                if ($this->style == "table") {
+                    $renderer->tableheader_close();
+                } else {
+                    $renderer->listitem_close();
+                }
+            } else {
+                $this->doc .= '</tr>';
+            }
         }
         return true;
     }
@@ -435,8 +490,11 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
      *    further key-value pairs for columns set by plugins (optional), if not defined th() and td() of plugin are called
      * @return bool, false if no id given
      */
-    public function addPage($page)
-    {
+    public function addPage($page,$format="xhtml") {
+        $renderer = p_get_renderer($format);
+
+        $targetIsODT = strtoupper($format) == "ODT" && $renderer != NULL;
+
         $id = $page['id'];
         if (!$id) return false;
         $this->page = $page;
@@ -510,15 +568,22 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
      * @param array $page see for details @see addPage()
      * @return void
      */
-    protected function renderPageRow($page)
-    {
+    protected function renderPageRow($page,$format="xhtml") {
+        $renderer = p_get_renderer($format);
+
+        $targetIsODT = strtoupper($format) == "ODT" && $renderer != NULL;
+        
         $this->page = $page;
         $this->meta = null; // should not be used here
 
         $id = $this->page['id'];
         if ($this->style == 'simplelist') {
             // simplelist is enabled; just output pagename
-            $this->doc .= '<li>';
+            if ($targetIsODT) {
+                $renderer->listitem_open(0);
+            } else {
+                $this->doc .= '<li>';
+            }
             if (page_exists($id)) {
                 $class = 'wikilink1';
             } else {
@@ -530,9 +595,23 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
             }
             $title = hsc($this->page['title']);
 
-            $content = '<a href="' . wl($id) . '" class="' . $class . '" title="' . $id . '">' . $title . '</a>';
-            $this->doc .= $content;
-            $this->doc .= '</li>';
+            $linkid_internal=$id . (!empty($this->page['section']) ? '#' . $this->page['section'] : '');
+            $linkid_external=wl($id,'',true) . (!empty($this->page['section']) ? '#' . $this->page['section'] : '');
+            
+            if ($targetIsODT) {
+                $renderer->externallink($linkid_external,$title);
+            } else {
+                if ($renderer) {
+                    $this->doc .= $renderer->internallink($linkid_internal,$title,null,true);
+                } else {
+                    $this->doc .= html_wikilink($linkid_internal,$title);
+                }
+            }
+            if ($targetIsODT) {
+                $renderer->listitem_close();
+            } else {
+                $this->doc .= '</li>';
+            }
             return;
         }
         // default pagelist, list or table style:
@@ -552,25 +631,32 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
         if (!empty($class)) {
             $class = ' class="' . $class . '"';
         }
-
-        $this->doc .= '<tr' . $class . '>';
+            
+        if ($targetIsODT) {
+            if ($this->style == "table") {
+                $renderer->tablerow_open();
+            }
+        } else {
+            $this->doc .= '<tr' . $class . '>';
+        }
+        
         //image column first
         if (!empty($this->column['image'])) {
-            $this->printPluginCell('pageimage', 'image', $id);
+            $this->printPluginCell('pageimage', 'image', $id, $format);
         }
-        $this->printPageCell($id);
+        $this->printPageCell($id,$format,$renderer);
 
         if (!empty($this->column['date'])) {
-            $this->printDateCell();
+            $this->printDateCell($format,$renderer);
         }
         if (!empty($this->column['user'])) {
-            $this->printUserCell();
+            $this->printUserCell($format,$renderer);
         }
         if (!empty($this->column['desc'])) {
-            $this->printDescriptionCell();
+            $this->printDescriptionCell($format,$renderer);
         }
         if (!empty($this->column['diff'])) {
-            $this->printDiffCell($id);
+            $this->printDiffCell($id,$format,$renderer);
         }
         if (!empty($this->column['summary'])) {
             $this->printSummary();
@@ -578,11 +664,17 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
         foreach ($this->plugins as $plugin => $columns) {
             foreach ($columns as $col) {
                 if (!empty($this->column[$col]) && $col != 'image') {
-                    $this->printPluginCell($plugin, $col, $id);
+                    $this->printPluginCell($plugin, $col, $id, $format);
                 }
             }
         }
-        $this->doc .= '</tr>';
+        if ($targetIsODT) {
+            if ($this->style == "table") {
+                $renderer->tablerow_close();
+            }
+        } else {
+            $this->doc .= '</tr>';
+        }
     }
 
     /**
@@ -591,8 +683,11 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
      *
      * @return string html
      */
-    public function finishList()
-    {
+    public function finishList($format="xhtml") {
+        $renderer = p_get_renderer($format);
+        
+        $targetIsODT = strtoupper($format) == "ODT" && $renderer != NULL;
+        
         if ($this->sort) {
             Sort::ksort($this->pages);
             if ($this->rsort) {
@@ -602,7 +697,7 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
 
         $cnt = 0;
         foreach ($this->pages as $page) {
-            $this->renderPageRow($page);
+            $this->renderPageRow($page, $format);
 
             $cnt++;
             if($this->limit > 0 && $cnt >= $this->limit){
@@ -611,12 +706,28 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
         }
 
         if ($this->style == 'simplelist') {
-            $this->doc .= '</ul>';
+            if ($targetIsODT) {            
+                if ($this->style == "table") {
+                    $renderer->table_close();
+                } else {
+                    $renderer->listu_close();
+                }
+            } else {
+                $this->doc .= '</ul>';
+            }
         } else {
             if (!isset($this->page)) {
                 $this->doc = '';
             } else {
-                $this->doc .= '</table></div>';
+                if ($targetIsODT) {
+                    if ($this->style == "table") {
+                        $renderer->table_close();
+                    } else {
+                        $renderer->listu_close();
+                    }
+                } else {
+                    $this->doc .= '</table></div>';
+                }
             }
         }
 
@@ -634,8 +745,12 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
      * @param string $id page id displayed in this table row
      * @return bool whether empty
      */
-    protected function printPageCell($id)
-    {
+    protected function printPageCell($id,$format="xhtml") {
+        $renderer = p_get_renderer($format);
+        $content = "";
+
+        $targetIsODT = strtoupper($format) == "ODT" && $renderer != NULL;
+        
         if ($this->page['exists']) {
             $class = 'wikilink1';
         } else {
@@ -655,11 +770,38 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
 
         // produce output
         $section = !empty($this->page['section']) ? '#' . $this->page['section'] : '';
-        $content = '<a href="' . wl($id) . $section . '" class="' . $class . '" title="' . $id . '"  data-wiki-id="' . $id . '">' . $title . '</a>';
-        if ($this->style == 'list') {
-            $content = '<ul><li>' . $content . '</li></ul>';
+        //original as of 2025-02-10: $content = '<a href="' . wl($id) . $section . '" class="' . $class . '" title="' . $id . '"  data-wiki-id="' . $id . '">' . $title . '</a>';
+        $linkid_internal=$id . (!empty($this->page['section']) ? '#' . $this->page['section'] : '');
+        $linkid_external=wl($id,'',true) . (!empty($this->page['section']) ? '#' . $this->page['section'] : '');
+        
+        if ($renderer && $targetIsODT) {
+			$content = $renderer->internallink($linkid_internal,$title,null,true);
+            if ($this->style == 'table') {
+                $renderer->tablecell_open();
+            } else {
+                $renderer->listitem_open(0);
+            }
+            $renderer->p_open();
+            $renderer->externallink($linkid_external,$title);
+            $renderer->p_close();
+            
+            if ($this->style == 'table') {
+                $renderer->tablecell_close();
+            } else {
+                $renderer->listitem_close();
+            }
+            return true;
+        } else {
+				if ($renderer) {
+					$content .= $renderer->internallink($linkid_internal,$title,null,true);
+				} else {
+					$content .= html_wikilink($linkid_internal,$title);
+				}
+            if ($this->style == 'list') {
+                $content = '<ul><li>' . $content . '</li></ul>';
+            }
+            return $this->printCell('page', $content, $format);
         }
-        return $this->printCell('page', $content);
     }
 
     /**
@@ -667,14 +809,15 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
      *
      * @return bool whether empty
      */
-    protected function printDateCell()
-    {
+    protected function printDateCell($format="xhtml") {
+        $renderer = p_get_renderer($format);
+        
         global $conf;
 
         if (empty($this->page['date']) || empty($this->page['exists'])) {
-            return $this->printCell('date', '');
+            return $this->printCell('date', '', $format);
         } else {
-            return $this->printCell('date', dformat($this->page['date'], $conf['dformat']));
+            return $this->printCell('date', dformat($this->page['date'], $conf['dformat']), $format);
         }
     }
 
@@ -683,9 +826,9 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
      *
      * @return bool whether empty
      */
-    protected function printUserCell()
+    protected function printUserCell($format="xhtml")
     {
-        return $this->printCell('user', $this->page['user']);
+        return $this->printCell('user', $this->page['user'], $format);
     }
 
     /**
@@ -709,7 +852,7 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
      *
      * @return bool whether empty
      */
-    protected function printDescriptionCell()
+    protected function printDescriptionCell($format="xhtml")
     {
         $desc = $this->page['desc'];
 
@@ -717,7 +860,7 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
         if ($max > 1 && PhpString::strlen($desc) > $max) {
             $desc = PhpString::substr($desc, 0, $max) . '…';
         }
-        return $this->printCell('desc', hsc($desc));
+        return $this->printCell('desc', hsc($desc), $format);
     }
 
     /**
@@ -726,7 +869,7 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
      * @param string $id page id displayed in this table row
      * @return bool whether empty
      */
-    protected function printDiffCell($id)
+    protected function printDiffCell($id,$format="xhtml")
     {
         // check for page existence
         if (!isset($this->page['exists'])) {
@@ -744,7 +887,7 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
                     <img src="' . DOKU_BASE . 'lib/images/diff.png" width="15" height="11"
                      title="' . hsc($this->getLang('diff_title')) . '" alt="' . hsc($this->getLang('diff_alt')) . '"/>
                     </a>';
-        return $this->printCell('diff', $content);
+        return $this->printCell('diff', $content, $format);
     }
 
     /**
@@ -763,12 +906,12 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
      * @param string $id page id displayed in this table row
      * @return bool whether empty
      */
-    protected function printPluginCell($plugin, $col, $id)
+    protected function printPluginCell($plugin, $col, $id, $format="xhtml")
     {
         if (!isset($this->page[$col])) {
             $this->page[$col] = $this->$plugin->td($id, $col);
         }
-        return $this->printCell($col, $this->page[$col]);
+        return $this->printCell($col, $this->page[$col], $format);
     }
 
     /**
@@ -778,15 +921,27 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
      * @param string $content html
      * @return bool whether empty
      */
-    protected function printCell($class, $content)
-    {
+    protected function printCell($class, $content, $format="xthml") {
+        $renderer = p_get_renderer($format);
+        
+        $targetIsODT = strtoupper($format) == "ODT" && $renderer != NULL;
+        
         if (!$content) {
             $content = '&nbsp;';
             $empty = true;
         } else {
             $empty = false;
         }
-        $this->doc .= '<td class="' . $class . '">' . $content . '</td>';
+
+        if ($targetIsODT) {
+            $renderer->tablecell_open();
+            $renderer->p_open();
+            $renderer->cdata($content);
+            $renderer->p_close();
+            $renderer->tablecell_close();
+        } else {
+            $this->doc .= '<td class="' . $class . '">' . $content . '</td>';
+        }
         return $empty;
     }
 
