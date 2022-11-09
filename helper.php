@@ -488,7 +488,11 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
             if ($targetIsODT) {
                 $renderer->externallink($linkid_external,$title);
             } else {
-                $this->doc .= $renderer->internallink($linkid_internal,$title);
+				if ($renderer) {
+					$this->doc .= $renderer->internallink($linkid_internal,$title);
+				} else {
+					$this->doc .= html_wikilink($linkid_internal,$title);
+				}
             }
             if ($targetIsODT) {
                 $renderer->listitem_close();
@@ -589,9 +593,9 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
         // produce output
         $linkid_internal=$id . (!empty($this->page['section']) ? '#' . $this->page['section'] : '');
         $linkid_external=wl($id,'',true) . (!empty($this->page['section']) ? '#' . $this->page['section'] : '');
-            
-        $content = $renderer->internallink($linkid_internal,$title,null,true);
-        if ($targetIsODT) {
+        
+        if ($renderer && $targetIsODT) {
+			$content = $renderer->internallink($linkid_internal,$title,null,true);
             if ($this->style == 'table') {
                 $renderer->tablecell_open();
             } else {
@@ -608,6 +612,7 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
             }
             return true;
         } else {
+			$content = html_wikilink($linkid_internal,$title);
             if ($this->style == 'list') {
                 $content = '<ul><li>' . $content . '</li></ul>';
             }
