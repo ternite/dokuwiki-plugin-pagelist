@@ -612,7 +612,11 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
             }
             return true;
         } else {
-			$content = html_wikilink($linkid_internal,$title);
+			if ($renderer) {
+				$content = $renderer->internallink($linkid_internal,$title,null,true);
+			} else {
+				$content = html_wikilink($linkid_internal,$title);
+			}
             if ($this->style == 'list') {
                 $content = '<ul><li>' . $content . '</li></ul>';
             }
