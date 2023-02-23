@@ -558,6 +558,7 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
      */
     protected function pageCell($id,$format="xhtml") {
 		$renderer = p_get_renderer($format);
+        $content = "";
 
         $targetIsODT = strtoupper($format) == "ODT" && $renderer != NULL;
 
