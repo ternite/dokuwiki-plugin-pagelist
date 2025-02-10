@@ -137,7 +137,6 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
 
     public function getMethods()
     {
-        $result = [];
         $result[] = [
             'name' => 'addColumn',
             'desc' => '(optional) adds an extra column for plugin data',
@@ -166,31 +165,34 @@ class helper_plugin_pagelist extends DokuWiki_Plugin
             'name' => 'setFlags',
             'desc' => '(optional) overrides default flags, or en/disable existing columns',
             'params' => ['flags' => 'array'],
-            'return' => ['success' => 'boolean'],
+            'return' => ['success' => 'boolean']
         ];
         $result[] = [
             'name' => 'startList',
             'desc' => '(required) prepares the table header for the page list',
-            'params' => array(
-                'caller' => 'string',
+            'params' => [
                 'format' => 'string',
-				),
+                'renderer' => 'Doku_Renderer',
+                'caller' => 'string'
+            ]
         ];
         $result[] = [
             'name' => 'addPage',
             'desc' => '(required) adds a page to the list',
-            'params' => array(
+            'params' => [
                 "page attributes, 'id' required, others optional" => 'array',
                 'format' => 'string',
-				),
+                'renderer' => 'Doku_Renderer'
+            ]
         ];
         $result[] = [
             'name' => 'finishList',
             'desc' => '(required) returns the XHTML output',
-            'params' => array(
+            'params' => [
                 'format' => 'string',
-				),
-            'return' => ['xhtml' => 'string'],
+                'renderer' => 'Doku_Renderer'
+            ],
+            'return' => ['xhtml' => 'string']
         ];
         return $result;
     }
